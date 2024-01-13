@@ -1,6 +1,11 @@
-local Module = {}
-
-function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
+local ClusterTree = {}
+---------------------------------------------------------------------
+--- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
+---------------------------------------------------------------------
+function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
+	------------------------------------------------------------
+	--- Cluster Points, using a custom O(n) DBSCAN approach  ---
+	------------------------------------------------------------
 	local Grid = {} -- Will not be factored into space complexity, simply an auxilary  
 	for Index, Point in Points do
 		local X = math.floor(Point.Position.X/Epsilon)
@@ -12,7 +17,9 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 	local Labels, ClusterID = {}, 0
 	for RawIndex, Point in Points do
 		if Labels[RawIndex] then continue end
-
+		---------------------------------------------------
+		--- Finding Neighbors, looking for core points  ---
+		---------------------------------------------------
 		local Neighbors = {}
 		local XCell = math.floor(Point.Position.X/Epsilon)
 		local ZCell = math.floor(Point.Position.Z/Epsilon)
@@ -34,10 +41,12 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		else
 			ClusterID = ClusterID + 1
 			Labels[RawIndex] = ClusterID 
-
-			local i = 1; while i<= #Neighbors do
-				local NeighborIndex = Neighbors[i]
-				if Labels[NeighborIndex] then i = i + 1 continue end
+			---------------------------------------------------
+			--- 			Expand The Cluster 				---
+			---------------------------------------------------
+			local Iterations = 1; while Iterations<= #Neighbors do
+				local NeighborIndex = Neighbors[Iterations]
+				if Labels[NeighborIndex] then Iterations = Iterations + 1 continue end
 				Labels[NeighborIndex] = ClusterID 
 
 				local CurrentPoint = Points[NeighborIndex]
@@ -65,10 +74,12 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 				end
 			end
 
-			i = i + 1
+			Iterations = Iterations + 1
 		end
 	end
-
+	------------------------------------------------------------
+	---		Group all assigned points into formal clusters   ---
+	------------------------------------------------------------
 	local Clusters = {}
 	for Index, ClusterID in Labels do
 		if Clusters[ClusterID] then
@@ -77,7 +88,10 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 			Clusters[ClusterID] = {Cluster = {Points[Index]}}
 		end
 	end
-
+	
+	------------------------------------------------------------
+	---		 Find Cluster axis-aligned bounding boxes     	 ---
+	------------------------------------------------------------
 	for ClusterID, ClusterCell in Clusters do
 		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
 
@@ -99,7 +113,9 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		local SizeZ = ClusterCell.AABB.MaxZ - ClusterCell.AABB.MinZ
 		MaxAABBExtents = math.max(MaxAABBExtents, math.abs(SizeX), math.abs(SizeZ))
 	end
-
+	------------------------------------------------------------
+	---		 Track AABBs as a grid-hierachy set up     	 	 ---
+	------------------------------------------------------------
 	MaxAABBExtents/=2; Clusters.ClusterRegionsCellSize = MaxAABBExtents
 	Clusters.ClusterRegions = {}
 	for ClusterID, ClusterCell in Clusters do
@@ -126,26 +142,32 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 			end
 		end 
 	end
-
+	------------------------------------------------------------
+	---	 	Sub-divide the clusters into sub-clusters 		 ---
+	------------------------------------------------------------
 	if Subdivisons and Subdivisons>1 then -- TODO: Balance sub clustering
 		for ClusterID, ClusterCell in Clusters do
 			if ClusterID == -1 or ClusterID == "ClusterRegions" or ClusterID == "ClusterRegionsCellSize" then continue end
-			ClusterCell.SubCluster = Module.NewClusterTree(ClusterCell.Cluster, Epsilon/2, MinSamples, Subdivisons-1) -- O(nm), where m will always be << n
+			ClusterCell.SubCluster = ClusterTree.new(ClusterCell.Cluster, Epsilon/2, MinSamples, Subdivisons-1) -- O(nm), where m will always be << n
 		end
 	end
 
 	return Clusters
 end
 
-function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
+-------------------------------------------------------------------------------------------------
+--- Query all points in a OBB-like radius, falls to a near-lookup when radius is not provided ---
+--- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)				  ---
+-------------------------------------------------------------------------------------------------
+function ClusterTree.Query(ClusterTreeTable, Point, Radius, Near)
 	Radius = Radius or 1
 	Near = Near or {}
 
+	local ClusterRegions = ClusterTreeTable.ClusterRegions
 	local XCell = math.floor(Point.Position.X/ClusterTreeTable.ClusterRegionsCellSize)
 	local ZCell = math.floor(Point.Position.Z/ClusterTreeTable.ClusterRegionsCellSize)
-	local ClusterRegions = ClusterTreeTable.ClusterRegions
-
 	if not ClusterRegions[XCell] then return Near end
+	
 	if ClusterTreeTable.ClusterRegionsCellSize>Radius then -- Adapative searching technique
 		if not ClusterRegions[XCell][ZCell] then return Near end -- Nothing in this generious radius
 		for ClusterID, ClusterCell in ClusterRegions[XCell][ZCell] do
@@ -154,7 +176,7 @@ function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
 					if SubClusterID == "ClusterRegions" or SubClusterID == "ClusterRegionsCellSize" then continue end
 
 					if SubClusterCell.SubCluster then-- Add all children of the overlapping sub-cluster to the result
-						Module.QueryClusterTree(SubClusterCell.SubCluster, Point, Radius, Near)
+						ClusterTree.Query(SubClusterCell.SubCluster, Point, Radius, Near)
 					else
 						if SubClusterCell.Cluster then -- Add all children of the leaf sub-cluster to the result
 							for _, ClusteredObject in SubClusterCell.Cluster do
@@ -193,7 +215,7 @@ function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
 		for NearX = XCell-NeighborRadius, XCell+NeighborRadius do
 			for NearZ = ZCell-NeighborRadius, ZCell+NeighborRadius do
 				if not ClusterRegions[NearX] or not ClusterRegions[NearX][NearZ] or NearX == XCell and NearZ == ZCell then continue end -- Only include neighbor existing cells 
-
+				
 				local DistanceX = (NearX + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.X
 				local DistanceZ = (NearZ + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.Z
 				local DistanceSquared = DistanceX * DistanceX + DistanceZ * DistanceZ
@@ -220,7 +242,8 @@ function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
 
 									local SubDistanceX, SubDistanceZ = ClosestX - Point.Position.X, ClosestZ - Point.Position.Z
 									local SubQueryRadius = Radius - math.sqrt(SubDistanceX * SubDistanceX + SubDistanceZ * SubDistanceZ)
-									Module.QueryClusterTree(SubClusterCell.SubCluster, Point, SubQueryRadius, Near)
+
+									ClusterTree.Query(SubClusterCell.SubCluster, Point, SubQueryRadius, Near)
 								else
 									if SubClusterCell.Cluster then -- Add all children of the leaf sub-cluster to the result
 										for _, ClusteredObject in SubClusterCell.Cluster do
