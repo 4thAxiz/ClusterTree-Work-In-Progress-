@@ -1,2 +1,3 @@
 # ClusterTree-Work-In-Progress-
-Not finished 
+Experimental, work in progress.
+Research paper coming soon
