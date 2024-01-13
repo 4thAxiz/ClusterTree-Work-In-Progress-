@@ -1,3 +1,4 @@
+
 local ClusterTree = {}
 ---------------------------------------------------------------------
 --- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
@@ -41,9 +42,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 		else
 			ClusterID = ClusterID + 1
 			Labels[RawIndex] = ClusterID 
-			--------------------------------------------------------------------------
-			--- 			Expand The Cluster 				---
-			---------------------------------------------------------------------------
+			---------------------------------------------------
+			--- 		Expand The Cluster 		---
+			---------------------------------------------------
 			local Iterations = 1; while Iterations<= #Neighbors do
 				local NeighborIndex = Neighbors[Iterations]
 				if Labels[NeighborIndex] then Iterations = Iterations + 1 continue end
@@ -77,9 +78,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 			Iterations = Iterations + 1
 		end
 	end
-	--------------------------------------------------------------------
-	---		Group all assigned points into formal clusters   ---
-	--------------------------------------------------------------------
+	------------------------------------------------------------
+	---	Group all assigned points into formal clusters   ---
+	------------------------------------------------------------
 	local Clusters = {}
 	for Index, ClusterID in Labels do
 		if Clusters[ClusterID] then
@@ -88,10 +89,10 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 			Clusters[ClusterID] = {Cluster = {Points[Index]}}
 		end
 	end
-	
-	--------------------------------------------------------------------
-	---		 Find Cluster axis-aligned bounding boxes     	 ---
-	--------------------------------------------------------------------
+
+	------------------------------------------------------------
+	---	 Find Cluster axis-aligned bounding boxes     	 ---
+	------------------------------------------------------------
 	for ClusterID, ClusterCell in Clusters do
 		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
 
@@ -113,9 +114,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 		local SizeZ = ClusterCell.AABB.MaxZ - ClusterCell.AABB.MinZ
 		MaxAABBExtents = math.max(MaxAABBExtents, math.abs(SizeX), math.abs(SizeZ))
 	end
-	----------------------------------------------------------------------------
-	---		 Track AABBs as a grid-hierachy set up     	 	 ---
-	----------------------------------------------------------------------------
+	-----------------------------------------------------------
+	---	   Track AABBs as a grid-hierachy set up     	---
+	-----------------------------------------------------------
 	MaxAABBExtents/=2; Clusters.ClusterRegionsCellSize = MaxAABBExtents
 	Clusters.ClusterRegions = {}
 	for ClusterID, ClusterCell in Clusters do
@@ -142,9 +143,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 			end
 		end 
 	end
-	----------------------------------------------------------------------------
-	---	 	Sub-divide the clusters into sub-clusters 		 ---
-	----------------------------------------------------------------------------
+	----------------------------------------------------------
+	---	 Sub-divide the clusters into sub-clusters    ----
+	----------------------------------------------------------
 	if Subdivisons and Subdivisons>1 then -- TODO: Balance sub clustering
 		for ClusterID, ClusterCell in Clusters do
 			if ClusterID == -1 or ClusterID == "ClusterRegions" or ClusterID == "ClusterRegionsCellSize" then continue end
@@ -167,7 +168,7 @@ function ClusterTree.Query(ClusterTreeTable, Point, Radius, Near)
 	local XCell = math.floor(Point.Position.X/ClusterTreeTable.ClusterRegionsCellSize)
 	local ZCell = math.floor(Point.Position.Z/ClusterTreeTable.ClusterRegionsCellSize)
 	if not ClusterRegions[XCell] then return Near end
-	
+
 	if ClusterTreeTable.ClusterRegionsCellSize>Radius then -- Adapative searching technique
 		if not ClusterRegions[XCell][ZCell] then return Near end -- Nothing in this generious radius
 		for ClusterID, ClusterCell in ClusterRegions[XCell][ZCell] do
@@ -215,7 +216,7 @@ function ClusterTree.Query(ClusterTreeTable, Point, Radius, Near)
 		for NearX = XCell-NeighborRadius, XCell+NeighborRadius do
 			for NearZ = ZCell-NeighborRadius, ZCell+NeighborRadius do
 				if not ClusterRegions[NearX] or not ClusterRegions[NearX][NearZ] or NearX == XCell and NearZ == ZCell then continue end -- Only include neighbor existing cells 
-				
+
 				local DistanceX = (NearX + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.X
 				local DistanceZ = (NearZ + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.Z
 				local DistanceSquared = DistanceX * DistanceX + DistanceZ * DistanceZ
