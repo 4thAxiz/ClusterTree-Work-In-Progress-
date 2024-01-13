@@ -43,7 +43,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 			ClusterID = ClusterID + 1
 			Labels[RawIndex] = ClusterID 
 			---------------------------------------------------
-			--- 			Expand The Cluster 				---
+			--- 		Expand The Cluster 		---
 			---------------------------------------------------
 			local Iterations = 1; while Iterations<= #Neighbors do
 				local NeighborIndex = Neighbors[Iterations]
@@ -79,7 +79,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		end
 	end
 	------------------------------------------------------------
-	---		Group all assigned points into formal clusters   ---
+	---	Group all assigned points into formal clusters   ---
 	------------------------------------------------------------
 	local Clusters = {}
 	for Index, ClusterID in Labels do
@@ -91,7 +91,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 	end
 
 	------------------------------------------------------------
-	---		 Find Cluster axis-aligned bounding boxes     	 ---
+	---	  Find Cluster axis-aligned bounding boxes     	 ---
 	------------------------------------------------------------
 	for ClusterID, ClusterCell in Clusters do
 		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
@@ -115,7 +115,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		MaxAABBExtents = math.max(MaxAABBExtents, math.abs(SizeX), math.abs(SizeZ))
 	end
 	------------------------------------------------------------
-	---		 Track AABBs as a grid-hierachy set up     	 	 ---
+	---	  Track AABBs as a grid-hierachy set up     	 ---
 	------------------------------------------------------------
 	MaxAABBExtents/=2; Clusters.ClusterRegionsCellSize = MaxAABBExtents
 	Clusters.ClusterRegions = {}
@@ -144,7 +144,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		end 
 	end
 	------------------------------------------------------------
-	---	 	Sub-divide the clusters into sub-clusters 		 ---
+	---	  Sub-divide the clusters into sub-clusters 	 ---
 	------------------------------------------------------------
 	if Subdivisons and Subdivisons>1 then -- TODO: Balance sub clustering
 		for ClusterID, ClusterCell in Clusters do
@@ -158,7 +158,7 @@ end
 
 -------------------------------------------------------------------------------------------------
 --- Query all points in a OBB-like radius, falls to a near-lookup when radius is not provided ---
---- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)				  ---
+--- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)		      ---
 -------------------------------------------------------------------------------------------------
 function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
 	Radius = Radius or 1
