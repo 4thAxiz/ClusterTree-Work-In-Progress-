@@ -157,7 +157,7 @@ end
 
 -------------------------------------------------------------------------------------------------
 --- Query all points in a OBB-like radius, falls to a near-lookup when radius is not provided ---
---- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)				  ---
+--- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)		      ---
 -------------------------------------------------------------------------------------------------
 function ClusterTree.Query(ClusterTreeTable, Point, Radius, Near)
 	Radius = Radius or 1
