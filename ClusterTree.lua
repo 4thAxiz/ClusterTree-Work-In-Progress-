@@ -41,9 +41,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 		else
 			ClusterID = ClusterID + 1
 			Labels[RawIndex] = ClusterID 
-			---------------------------------------------------
+			--------------------------------------------------------------------------
 			--- 			Expand The Cluster 				---
-			---------------------------------------------------
+			---------------------------------------------------------------------------
 			local Iterations = 1; while Iterations<= #Neighbors do
 				local NeighborIndex = Neighbors[Iterations]
 				if Labels[NeighborIndex] then Iterations = Iterations + 1 continue end
@@ -77,9 +77,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 			Iterations = Iterations + 1
 		end
 	end
-	------------------------------------------------------------
+	--------------------------------------------------------------------
 	---		Group all assigned points into formal clusters   ---
-	------------------------------------------------------------
+	--------------------------------------------------------------------
 	local Clusters = {}
 	for Index, ClusterID in Labels do
 		if Clusters[ClusterID] then
@@ -89,9 +89,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 		end
 	end
 	
-	------------------------------------------------------------
+	--------------------------------------------------------------------
 	---		 Find Cluster axis-aligned bounding boxes     	 ---
-	------------------------------------------------------------
+	--------------------------------------------------------------------
 	for ClusterID, ClusterCell in Clusters do
 		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
 
@@ -113,9 +113,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 		local SizeZ = ClusterCell.AABB.MaxZ - ClusterCell.AABB.MinZ
 		MaxAABBExtents = math.max(MaxAABBExtents, math.abs(SizeX), math.abs(SizeZ))
 	end
-	------------------------------------------------------------
+	----------------------------------------------------------------------------
 	---		 Track AABBs as a grid-hierachy set up     	 	 ---
-	------------------------------------------------------------
+	----------------------------------------------------------------------------
 	MaxAABBExtents/=2; Clusters.ClusterRegionsCellSize = MaxAABBExtents
 	Clusters.ClusterRegions = {}
 	for ClusterID, ClusterCell in Clusters do
@@ -142,9 +142,9 @@ function ClusterTree.new(Points, Epsilon, MinSamples, Subdivisons)
 			end
 		end 
 	end
-	------------------------------------------------------------
+	----------------------------------------------------------------------------
 	---	 	Sub-divide the clusters into sub-clusters 		 ---
-	------------------------------------------------------------
+	----------------------------------------------------------------------------
 	if Subdivisons and Subdivisons>1 then -- TODO: Balance sub clustering
 		for ClusterID, ClusterCell in Clusters do
 			if ClusterID == -1 or ClusterID == "ClusterRegions" or ClusterID == "ClusterRegionsCellSize" then continue end
