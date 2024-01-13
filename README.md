@@ -1,5 +1,8 @@
 # ClusterTree-Work-In-Progress-
 ## Linearized Binary Spatial-Partitioning Structure (unlike traditional trees that have a O(n log n) overhead) for sub-linear queries (currently unbalanced)
+## What is this new novel Cluster Tree data structure?
+A new spatial binary data structure, similiar to the idea of kd-trees or quad/oct trees for logarithimic queries, except guranteed linear construction times.
+Unlike most traditional trees, ClusterTree only necessarily subdivides cells only for arbitrarily high-density clustered regions, and no divisions for sparse regions. 
 
 ### Caveats
 - Tree is Unbalanced as of now.
