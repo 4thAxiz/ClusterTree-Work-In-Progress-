@@ -1,13 +1,60 @@
-
 local Module = {}
+-- 4thAxis
+
+local function CalculateOverlap(Min1, Max1, Min2, Max2)
+	return math.max(0, math.min(Max1, Max2) - math.max(Min1, Min2))
+end
+function EntireCellInsideRadius(Origin, CellX, CellZ, CellSize, Radius)
+	local Distance = math.sqrt((Origin.Position.X - CellX * CellSize)^2 + (Origin.Position.Z - CellZ * CellSize)^2)
+	return Distance + CellSize <= Radius
+end
+
+function EntireAABBInsideRadius(AABB, CircleCenter, Radius)
+	local ClosestX = math.max(AABB.MinX, math.min(CircleCenter.X, AABB.MaxX))
+	local ClosestZ = math.max(AABB.MinZ, math.min(CircleCenter.Z, AABB.MaxZ))
+
+	local Distance = math.sqrt((ClosestX - CircleCenter.X)^2 + (ClosestZ - CircleCenter.Z)^2)
+	return Distance + math.max(AABB.MaxX - AABB.MinX, AABB.MaxZ - AABB.MinZ)/2 <= Radius
+end
+
+local function VisualizeClusterAABB(ClusterGroup, MaxX, MinX, MaxZ, MinZ, Subdivision)
+	local Height = 5 
+
+	local AABBVisual = Instance.new("Part")
+	AABBVisual.Size = Vector3.new(MaxX - MinX, Height, MaxZ - MinZ)
+	AABBVisual.Position = Vector3.new((MaxX + MinX)/2, Height/2, (MaxZ + MinZ)/2)
+	AABBVisual.Anchored = true
+	AABBVisual.Parent = workspace
+	AABBVisual.BrickColor = BrickColor.Black()
+	AABBVisual.Transparency = 1-(1/Subdivision) -- Quick maffs
+
+	ClusterGroup.AABBVisual = AABBVisual
+end
+
+local function VisualizeAABBGrid(ClusterRegions, ClusterRegionsCellSize, Subdivisons)
+	local Height = 5 
+	local Size = Vector3.new(ClusterRegionsCellSize, Height, ClusterRegionsCellSize)
+
+	for X, Rows in ClusterRegions do
+		for Z in Rows do
+			local CellArea = Instance.new("Part")
+			CellArea.Size = Size
+			CellArea.Position = Vector3.new(X * ClusterRegionsCellSize, Height, Z * ClusterRegionsCellSize)
+			CellArea.Anchored = true
+			CellArea.Parent = workspace
+			CellArea.Transparency = 1-(1/Subdivisons) -- Quick maffs
+			CellArea.BrickColor = BrickColor.new("Pink")
+		end
+	end
+end
+
 ---------------------------------------------------------------------
 --- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
 ---------------------------------------------------------------------
-function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
-	------------------------------------------------------------
-	--- Cluster Points, using a custom O(n) DBSCAN approach  ---
-	------------------------------------------------------------
-	local Grid = {} -- Will not be factored into space complexity, simply an auxilary  
+local VisualizeAABBs = false
+local VisualizeCells = false
+function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
+	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this approach as this has not been proved to be linear to dataset
 	for Index, Point in Points do
 		local X = math.floor(Point.Position.X/Epsilon)
 		local Z = math.floor(Point.Position.Z/Epsilon)
@@ -18,9 +65,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 	local Labels, ClusterID = {}, 0
 	for RawIndex, Point in Points do
 		if Labels[RawIndex] then continue end
-		---------------------------------------------------
-		--- Finding Neighbors, looking for core points  ---
-		---------------------------------------------------
+
 		local Neighbors = {}
 		local XCell = math.floor(Point.Position.X/Epsilon)
 		local ZCell = math.floor(Point.Position.Z/Epsilon)
@@ -42,9 +87,6 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 		else
 			ClusterID = ClusterID + 1
 			Labels[RawIndex] = ClusterID 
-			---------------------------------------------------
-			--- 		Expand The Cluster 		---
-			---------------------------------------------------
 			local Iterations = 1; while Iterations<= #Neighbors do
 				local NeighborIndex = Neighbors[Iterations]
 				if Labels[NeighborIndex] then Iterations = Iterations + 1 continue end
@@ -78,191 +120,128 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisons)
 			Iterations = Iterations + 1
 		end
 	end
-	------------------------------------------------------------
-	---	Group all assigned points into formal clusters   ---
-	------------------------------------------------------------
-	local Clusters = {}
+
+	local ClusterGroups = {}
 	for Index, ClusterID in Labels do
-		if Clusters[ClusterID] then
-			table.insert(Clusters[ClusterID].Cluster, Points[Index])
+		if ClusterGroups[ClusterID] then
+			table.insert(ClusterGroups[ClusterID].Cluster, Points[Index])
 		else
-			Clusters[ClusterID] = {Cluster = {Points[Index]}}
+			ClusterGroups[ClusterID] = {Cluster = {Points[Index]}}
 		end
 	end
 
-	------------------------------------------------------------
-	---	  Find Cluster axis-aligned bounding boxes     	 ---
-	------------------------------------------------------------
-	for ClusterID, ClusterCell in Clusters do
-		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
+	for ClusterID, ClusterGroup in ClusterGroups do
+		if ClusterID == -1 or ClusterGroup.Cluster == nil then continue end
 
 		local MinX, MinZ = math.huge, math.huge
 		local MaxX, MaxZ = -math.huge, -math.huge
-		for _, Point in ClusterCell.Cluster do
+		for _, Point in ClusterGroup.Cluster do
 			local X, Z = Point.Position.X, Point.Position.Z
 			MinX, MaxX = math.min(MinX, X), math.max(MaxX, X)
 			MinZ, MaxZ = math.min(MinZ, Z), math.max(MaxZ, Z)
 		end
 
-		ClusterCell.AABB = {MinX = MinX, MaxX = MaxX, MinZ = MinZ, MaxZ = MaxZ}
+		if VisualizeAABBs then
+			VisualizeClusterAABB(ClusterGroup, MaxX, MinX, MaxZ, MinZ, Subdivisions)
+		end
+		ClusterGroup.AABB = {MinX = MinX, MaxX = MaxX, MinZ = MinZ, MaxZ = MaxZ}
 	end
 
-	local MaxAABBExtents = 1; for ClusterID, ClusterCell in Clusters do
-		if ClusterID == -1 or ClusterCell.Cluster == nil then continue end
-
-		local SizeX = ClusterCell.AABB.MaxX - ClusterCell.AABB.MinX
-		local SizeZ = ClusterCell.AABB.MaxZ - ClusterCell.AABB.MinZ
-		MaxAABBExtents = math.max(MaxAABBExtents, math.abs(SizeX), math.abs(SizeZ))
-	end
-	------------------------------------------------------------
-	---	  Track AABBs as a grid-hierachy set up     	 ---
-	------------------------------------------------------------
-	MaxAABBExtents/=2; Clusters.ClusterRegionsCellSize = MaxAABBExtents
-	Clusters.ClusterRegions = {}
-	for ClusterID, ClusterCell in Clusters do
-		if ClusterID == -1 or ClusterID == "ClusterRegions" or ClusterID == "ClusterRegionsCellSize" then continue end
-
-		local XCell = math.floor(((ClusterCell.AABB.MinX + ClusterCell.AABB.MaxX)/2)/MaxAABBExtents)
-		local ZCell = math.floor(((ClusterCell.AABB.MinZ + ClusterCell.AABB.MaxZ)/2)/MaxAABBExtents)
-		Clusters.ClusterRegions[XCell] = Clusters.ClusterRegions[XCell] or {}
-		Clusters.ClusterRegions[XCell][ZCell] = Clusters.ClusterRegions[XCell][ZCell] or {}
-
-		table.insert(Clusters.ClusterRegions[XCell][ZCell], ClusterCell)
-	end
-
-	if Clusters[-1] then
-		for _, UnclusteredPoint in Clusters[-1].Cluster do
-			local XCell = math.floor(UnclusteredPoint.Position.X/Clusters.ClusterRegionsCellSize)
-			local ZCell = math.floor(UnclusteredPoint.Position.Z/Clusters.ClusterRegionsCellSize)
-			Clusters.ClusterRegions[XCell] = Clusters.ClusterRegions[XCell] or {}
-
-			if Clusters.ClusterRegions[XCell][ZCell] then 
-				table.insert(Clusters.ClusterRegions[XCell][ZCell][1].Cluster, UnclusteredPoint)
-			else
-				Clusters.ClusterRegions[XCell][ZCell] = { {["Cluster"]={UnclusteredPoint}} }
-			end
-		end 
-	end
-	------------------------------------------------------------
-	---	  Sub-divide the clusters into sub-clusters 	 ---
-	------------------------------------------------------------
-	if Subdivisons and Subdivisons>1 then -- TODO: Balance sub clustering
-		for ClusterID, ClusterCell in Clusters do
-			if ClusterID == -1 or ClusterID == "ClusterRegions" or ClusterID == "ClusterRegionsCellSize" then continue end
-			ClusterCell.SubCluster = Module.NewClusterTree(ClusterCell.Cluster, Epsilon/2, MinSamples, Subdivisons-1) -- O(nm), where m will always be << n
+	local MaxAABBExtents, LargestClusterAABB = 1, next(ClusterGroups); for ClusterID, ClusterGroup in ClusterGroups do
+		if ClusterID == -1 or ClusterGroup.Cluster == nil then continue end
+		local Volume = math.max(math.abs(ClusterGroup.AABB.MaxX - ClusterGroup.AABB.MinX), math.abs(ClusterGroup.AABB.MaxZ - ClusterGroup.AABB.MinZ))
+		if Volume > MaxAABBExtents then
+			MaxAABBExtents = Volume
+			LargestClusterAABB = ClusterGroup.AABB
 		end
 	end
 
-	return Clusters
+	ClusterGroups.AABBGridCellSize = MaxAABBExtents
+	ClusterGroups.AABBGrid = {}
+
+	for ClusterID, ClusterGroup in ClusterGroups do
+		if ClusterID == -1 or ClusterID == "AABBGrid" or ClusterID == "AABBGridCellSize" then continue end
+
+		local XCell = math.floor(((ClusterGroup.AABB.MinX + ClusterGroup.AABB.MaxX)/2)/ClusterGroups.AABBGridCellSize)
+		local ZCell = math.floor(((ClusterGroup.AABB.MinZ + ClusterGroup.AABB.MaxZ)/2)/ClusterGroups.AABBGridCellSize)
+		ClusterGroups.AABBGrid[XCell] = ClusterGroups.AABBGrid[XCell] or {}
+		ClusterGroups.AABBGrid[XCell][ZCell] = ClusterGroups.AABBGrid[XCell][ZCell] or {}
+
+		table.insert(ClusterGroups.AABBGrid[XCell][ZCell], ClusterGroup)
+	end
+
+	if ClusterGroups[-1] then
+		for _, UnclusteredPoint in ClusterGroups[-1].Cluster do
+			local XCell = math.floor((UnclusteredPoint.Position.X)/ClusterGroups.AABBGridCellSize)
+			local ZCell = math.floor((UnclusteredPoint.Position.Z)/ClusterGroups.AABBGridCellSize)
+			ClusterGroups.AABBGrid[XCell] = ClusterGroups.AABBGrid[XCell] or {}
+
+			if ClusterGroups.AABBGrid[XCell][ZCell] then 
+				table.insert(ClusterGroups.AABBGrid[XCell][ZCell][1].Cluster, UnclusteredPoint)
+			else
+				ClusterGroups.AABBGrid[XCell][ZCell] = {{["Cluster"] = {UnclusteredPoint}}}
+			end
+		end 
+	end
+
+	if VisualizeCells then VisualizeAABBGrid(ClusterGroups.AABBGrid, ClusterGroups.AABBGridCellSize, Subdivisions) end
+
+	if Subdivisions and Subdivisions>1 then -- TODO: Balance sub clustering
+		for ClusterID, ClusterGroup in ClusterGroups do
+			if ClusterID == -1 or ClusterID == "AABBGrid" or ClusterID == "AABBGridCellSize" then continue end
+			ClusterGroup.SubCluster = Module.NewClusterTree(ClusterGroup.Cluster, Epsilon/2, MinSamples, Subdivisions-1) -- O(nm), where m will always be << n
+		end
+	end
+
+	return ClusterGroups
 end
 
 -------------------------------------------------------------------------------------------------
---- Query all points in a OBB-like radius, falls to a near-lookup when radius is not provided ---
+--- Query all points in a OBB-like Radius, falls to a near-lookup when Radius is not provided ---
 --- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)		      ---
 -------------------------------------------------------------------------------------------------
-function Module.QueryClusterTree(ClusterTreeTable, Point, Radius, Near)
+
+function Module.Query(ClusterTreeTable, Point, Radius, Near, AABBsVisited)
 	Radius = Radius or 1
 	Near = Near or {}
+	AABBsVisited = AABBsVisited or {}
 
-	local ClusterRegions = ClusterTreeTable.ClusterRegions
-	local XCell = math.floor(Point.Position.X/ClusterTreeTable.ClusterRegionsCellSize)
-	local ZCell = math.floor(Point.Position.Z/ClusterTreeTable.ClusterRegionsCellSize)
-	if not ClusterRegions[XCell] then return Near end
+	local AABBGrid = ClusterTreeTable.AABBGrid
+	local XCell = math.floor(Point.Position.X/ClusterTreeTable.AABBGridCellSize)
+	local ZCell = math.floor(Point.Position.Z/ClusterTreeTable.AABBGridCellSize)
+	if not AABBGrid[XCell] or not AABBGrid[XCell][ZCell] then return Near end
 
-	if ClusterTreeTable.ClusterRegionsCellSize>Radius then -- Adapative searching technique
-		if not ClusterRegions[XCell][ZCell] then return Near end -- Nothing in this generious radius
-		for ClusterID, ClusterCell in ClusterRegions[XCell][ZCell] do
-			if ClusterCell.SubCluster then
-				for SubClusterID, SubClusterCell in ClusterCell.SubCluster do
-					if SubClusterID == "ClusterRegions" or SubClusterID == "ClusterRegionsCellSize" then continue end
+	local NeighborRadius = math.ceil(Radius/ClusterTreeTable.AABBGridCellSize)
+	for NearX = XCell-NeighborRadius, XCell+NeighborRadius do
+		for NearZ = ZCell-NeighborRadius, ZCell+NeighborRadius do
+			if not AABBGrid[NearX] or not AABBGrid[NearX][NearZ] then continue end
 
-					if SubClusterCell.SubCluster then-- Add all children of the overlapping sub-cluster to the result
-						Module.QueryClusterTree(SubClusterCell.SubCluster, Point, Radius, Near)
-					else
-						if SubClusterCell.Cluster then -- Add all children of the leaf sub-cluster to the result
-							for _, ClusteredObject in SubClusterCell.Cluster do
-								local Diff=ClusteredObject.Position-Point.Position
-								if Diff:Dot(Diff)<Radius*Radius then
-									table.insert(Near, ClusteredObject)
-								end
-							end
-						end
+			local OtherCell = AABBGrid[NearX][NearZ]
+			if EntireCellInsideRadius(Point, NearX, NearZ, ClusterTreeTable.AABBGridCellSize, Radius) then
+				for _, ClusterGroup in OtherCell do
+					for _, Point in ClusterGroup.Cluster do
+						table.insert(Near, Point)
 					end
 				end
 			else
-				for _, ClusteredObject in ClusterCell.Cluster do
-					local Diff=ClusteredObject.Position-Point.Position
-					if Diff:Dot(Diff)<Radius*Radius then
-						table.insert(Near, ClusteredObject)
-					end
-				end
-			end
-		end
-	else
-		local Cell = ClusterRegions[XCell] and ClusterRegions[XCell][ZCell]
-		if Cell then
-			for ClusterID, ClusterCell in Cell do
-				for _, Point in ClusterCell.Cluster do
-					table.insert(Near, Point)
-				end
-			end
-		end
+				for _, ClusterGroup in OtherCell do
+					if AABBsVisited[ClusterGroup] then AABBsVisited[ClusterGroup.SubCluster or ClusterGroup] = true continue end -- Continue to mark the entire lineage to avoid extra work.
+					if not ClusterGroup.AABB then continue end
 
-		if ClusterTreeTable.ClusterRegionsCellSize == Radius then -- Your lucky day
-			return Near
-		end 
-
-		local NeighborRadius = math.ceil(Radius/ClusterTreeTable.ClusterRegionsCellSize)
-		for NearX = XCell-NeighborRadius, XCell+NeighborRadius do
-			for NearZ = ZCell-NeighborRadius, ZCell+NeighborRadius do
-				if not ClusterRegions[NearX] or not ClusterRegions[NearX][NearZ] or NearX == XCell and NearZ == ZCell then continue end -- Only include neighbor existing cells 
-
-				local DistanceX = (NearX + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.X
-				local DistanceZ = (NearZ + 0.5) * ClusterTreeTable.ClusterRegionsCellSize - Point.Position.Z
-				local DistanceSquared = DistanceX * DistanceX + DistanceZ * DistanceZ
-
-				if DistanceSquared < Radius * Radius then -- The cell falls inside the query radius
-					for ClusterID, ClusterCell in  ClusterRegions[NearX][NearZ] do
-						for _, ClusteredObject in ClusterCell.Cluster do
-							local Diff=ClusteredObject.Position-Point.Position
-							if Diff:Dot(Diff)<Radius*Radius then
-								table.insert(Near, ClusteredObject)
-							end
+					if EntireAABBInsideRadius(ClusterGroup.AABB, Point.Position, Radius) then
+						AABBsVisited[ClusterGroup.SubCluster or ClusterGroup] = true -- Mark by next sub-group
+						for _, Point in ClusterGroup.Cluster do
+							table.insert(Near, Point)
 						end
-					end
-				else -- The cell falls outside the query radius
-					for ClusterID, ClusterCell in ClusterRegions[NearX][NearZ] do
-						if ClusterCell.SubCluster then
-							for SubClusterID, SubClusterCell in ClusterCell.SubCluster do
-								if SubClusterID == "ClusterRegions" or SubClusterID == "ClusterRegionsCellSize" then continue end
+					else
+						if ClusterGroup.SubCluster then
+							local OverlapX = CalculateOverlap(Point.Position.X - Radius, Point.Position.X + Radius, ClusterGroup.AABB.MinX, ClusterGroup.AABB.MaxX)
+							local OverlapZ = CalculateOverlap(Point.Position.Z - Radius, Point.Position.Z + Radius, ClusterGroup.AABB.MinZ, ClusterGroup.AABB.MaxZ)
+							local IntersectionArea = OverlapX * OverlapZ
+							local TotalCellArea = (ClusterGroup.AABB.MaxX - ClusterGroup.AABB.MinX) * (ClusterGroup.AABB.MaxZ - ClusterGroup.AABB.MinZ)
+							local SubQueryRadius = Radius * math.sqrt(IntersectionArea/TotalCellArea)*2
 
-								if SubClusterCell.SubCluster then-- Add all children of the overlapping sub-cluster to the result
-									local CellMinX, CellMaxX = NearX * ClusterTreeTable.ClusterRegionsCellSize, (NearX + 1) * ClusterTreeTable.ClusterRegionsCellSize
-									local CellMinZ, CellMaxZ = NearZ * ClusterTreeTable.ClusterRegionsCellSize, (NearZ + 1) * ClusterTreeTable.ClusterRegionsCellSize
-									local ClosestX, ClosestZ = math.max(CellMinX, math.min(CellMaxX, Point.Position.X)), math.max(CellMinZ, math.min(CellMaxZ, Point.Position.Z))
-
-									local SubDistanceX, SubDistanceZ = ClosestX - Point.Position.X, ClosestZ - Point.Position.Z
-									local SubQueryRadius = Radius - math.sqrt(SubDistanceX * SubDistanceX + SubDistanceZ * SubDistanceZ)
-
-									Module.QueryClusterTree(SubClusterCell.SubCluster, Point, SubQueryRadius, Near)
-								else
-									if SubClusterCell.Cluster then -- Add all children of the leaf sub-cluster to the result
-										for _, ClusteredObject in SubClusterCell.Cluster do
-											local Diff=ClusteredObject.Position-Point.Position
-											if Diff:Dot(Diff)<Radius*Radius then
-												table.insert(Near, ClusteredObject)
-											end
-										end
-									end
-								end
-							end
-						else
-							for _, ClusteredObject in ClusterCell.Cluster do
-								local Diff=ClusteredObject.Position-Point.Position
-								if Diff:Dot(Diff)<Radius*Radius then
-									table.insert(Near, ClusteredObject)
-								end
-							end
+							Module.Query(ClusterGroup.SubCluster, Point, SubQueryRadius, Near)
 						end
 					end
 				end
