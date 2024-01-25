@@ -93,6 +93,7 @@ end
 ---------------------------------------------------------------------
 --- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
 ---------------------------------------------------------------------
+
 function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 	local ClusterGroups = {}
 	for Index, ClusterID in GetDataClusterLabels(Points, Epsilon, MinSamples) do
