@@ -20,7 +20,7 @@ function EntireAABBInsideRadius(AABB, CircleCenter, Radius)
 end
 
 local function GetDataClusterLabels(Data, Epsilon, MinSamples)
-	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this custom approach as this has not been proved to be linear to dataset
+	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this custom approach so I don't have to waste my time writing proofs for this.
 	for Index, Point in Data do
 		local X = math.floor(Point.Position.X/Epsilon)
 		local Z = math.floor(Point.Position.Z/Epsilon)
