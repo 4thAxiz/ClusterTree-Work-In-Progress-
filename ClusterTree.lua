@@ -53,6 +53,7 @@ end
 ---------------------------------------------------------------------
 local VisualizeAABBs = false
 local VisualizeCells = false
+
 function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this approach as this has not been proved to be linear to dataset
 	for Index, Point in Points do
@@ -158,7 +159,6 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 
 	ClusterGroups.AABBGridCellSize = MaxAABBExtents
 	ClusterGroups.AABBGrid = {}
-
 	for ClusterID, ClusterGroup in ClusterGroups do
 		if ClusterID == -1 or ClusterID == "AABBGrid" or ClusterID == "AABBGridCellSize" then continue end
 
