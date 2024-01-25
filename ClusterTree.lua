@@ -1,5 +1,7 @@
-local Module = {}
 -- 4thAxis
+-- 1/25/2024
+
+local Module = {}
 
 local function CalculateOverlap(Min1, Max1, Min2, Max2)
 	return math.max(0, math.min(Max1, Max2) - math.max(Min1, Min2))
@@ -17,46 +19,9 @@ function EntireAABBInsideRadius(AABB, CircleCenter, Radius)
 	return Distance + math.max(AABB.MaxX - AABB.MinX, AABB.MaxZ - AABB.MinZ)/2 <= Radius
 end
 
-local function VisualizeClusterAABB(ClusterGroup, MaxX, MinX, MaxZ, MinZ, Subdivision)
-	local Height = 5 
-
-	local AABBVisual = Instance.new("Part")
-	AABBVisual.Size = Vector3.new(MaxX - MinX, Height, MaxZ - MinZ)
-	AABBVisual.Position = Vector3.new((MaxX + MinX)/2, Height/2, (MaxZ + MinZ)/2)
-	AABBVisual.Anchored = true
-	AABBVisual.Parent = workspace
-	AABBVisual.BrickColor = BrickColor.Black()
-	AABBVisual.Transparency = 1-(1/Subdivision) -- Quick maffs
-
-	ClusterGroup.AABBVisual = AABBVisual
-end
-
-local function VisualizeAABBGrid(ClusterRegions, ClusterRegionsCellSize, Subdivisons)
-	local Height = 5 
-	local Size = Vector3.new(ClusterRegionsCellSize, Height, ClusterRegionsCellSize)
-
-	for X, Rows in ClusterRegions do
-		for Z in Rows do
-			local CellArea = Instance.new("Part")
-			CellArea.Size = Size
-			CellArea.Position = Vector3.new(X * ClusterRegionsCellSize, Height, Z * ClusterRegionsCellSize)
-			CellArea.Anchored = true
-			CellArea.Parent = workspace
-			CellArea.Transparency = 1-(1/Subdivisons) -- Quick maffs
-			CellArea.BrickColor = BrickColor.new("Pink")
-		end
-	end
-end
-
----------------------------------------------------------------------
---- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
----------------------------------------------------------------------
-local VisualizeAABBs = false
-local VisualizeCells = false
-
-function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
-	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this approach as this has not been proved to be linear to dataset
-	for Index, Point in Points do
+local function GetDataClusterLabels(Data, Epsilon, MinSamples)
+	local Grid = {} -- TODO: Implement GriT-DBSCAN, instead of this custom approach as this has not been proved to be linear to dataset
+	for Index, Point in Data do
 		local X = math.floor(Point.Position.X/Epsilon)
 		local Z = math.floor(Point.Position.Z/Epsilon)
 		Grid[X] = Grid[X] or {}; if not Grid[X][Z] then Grid[X][Z] = {} end
@@ -64,7 +29,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 	end
 
 	local Labels, ClusterID = {}, 0
-	for RawIndex, Point in Points do
+	for RawIndex, Point in Data do
 		if Labels[RawIndex] then continue end
 
 		local Neighbors = {}
@@ -74,7 +39,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 			for NearZ = ZCell-1, ZCell+1 do
 				if Grid[NearX] and Grid[NearX][NearZ] then 
 					for _, NearPoint in Grid[NearX][NearZ] do
-						local Diff=Points[NearPoint].Position-Point.Position
+						local Diff=Data[NearPoint].Position-Point.Position
 						if Diff:Dot(Diff) <= Epsilon*Epsilon then
 							table.insert(Neighbors, NearPoint)
 						end
@@ -93,7 +58,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 				if Labels[NeighborIndex] then Iterations = Iterations + 1 continue end
 				Labels[NeighborIndex] = ClusterID 
 
-				local CurrentPoint = Points[NeighborIndex]
+				local CurrentPoint = Data[NeighborIndex]
 				local NeighborNeighbors = {}
 
 				local XCell = math.floor(CurrentPoint.Position.X/Epsilon)
@@ -102,7 +67,7 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 					for NearZ = ZCell-1, ZCell+1 do
 						if Grid[NearX] and Grid[NearX][NearZ] then 
 							for _, NearPoint in Grid[NearX][NearZ] do
-								local Diff=Points[NearPoint].Position-CurrentPoint.Position
+								local Diff=Data[NearPoint].Position-CurrentPoint.Position
 								if Diff:Dot(Diff) <= Epsilon*Epsilon then
 									table.insert(NeighborNeighbors, NearPoint)
 								end
@@ -121,9 +86,16 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 			Iterations = Iterations + 1
 		end
 	end
+	
+	return Labels
+end
 
+---------------------------------------------------------------------
+--- Cluster Tree constructer, requires linear time: O(nm), (m<<n) --- 
+---------------------------------------------------------------------
+function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 	local ClusterGroups = {}
-	for Index, ClusterID in Labels do
+	for Index, ClusterID in GetDataClusterLabels(Points, Epsilon, MinSamples) do
 		if ClusterGroups[ClusterID] then
 			table.insert(ClusterGroups[ClusterID].Cluster, Points[Index])
 		else
@@ -133,7 +105,6 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 
 	for ClusterID, ClusterGroup in ClusterGroups do
 		if ClusterID == -1 or ClusterGroup.Cluster == nil then continue end
-
 		local MinX, MinZ = math.huge, math.huge
 		local MaxX, MaxZ = -math.huge, -math.huge
 		for _, Point in ClusterGroup.Cluster do
@@ -142,13 +113,11 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 			MinZ, MaxZ = math.min(MinZ, Z), math.max(MaxZ, Z)
 		end
 
-		if VisualizeAABBs then
-			VisualizeClusterAABB(ClusterGroup, MaxX, MinX, MaxZ, MinZ, Subdivisions)
-		end
 		ClusterGroup.AABB = {MinX = MinX, MaxX = MaxX, MinZ = MinZ, MaxZ = MaxZ}
 	end
 
-	local MaxAABBExtents, LargestClusterAABB = 1, next(ClusterGroups); for ClusterID, ClusterGroup in ClusterGroups do
+	local MaxAABBExtents, LargestClusterAABB = 1, next(ClusterGroups)
+	for ClusterID, ClusterGroup in ClusterGroups do
 		if ClusterID == -1 or ClusterGroup.Cluster == nil then continue end
 		local Volume = math.max(math.abs(ClusterGroup.AABB.MaxX - ClusterGroup.AABB.MinX), math.abs(ClusterGroup.AABB.MaxZ - ClusterGroup.AABB.MinZ))
 		if Volume > MaxAABBExtents then
@@ -158,15 +127,13 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 	end
 
 	ClusterGroups.AABBGridCellSize = MaxAABBExtents
-	ClusterGroups.AABBGrid = {}
-	for ClusterID, ClusterGroup in ClusterGroups do
+	ClusterGroups.AABBGrid = {}; for ClusterID, ClusterGroup in ClusterGroups do
 		if ClusterID == -1 or ClusterID == "AABBGrid" or ClusterID == "AABBGridCellSize" then continue end
-
 		local XCell = math.floor(((ClusterGroup.AABB.MinX + ClusterGroup.AABB.MaxX)/2)/ClusterGroups.AABBGridCellSize)
 		local ZCell = math.floor(((ClusterGroup.AABB.MinZ + ClusterGroup.AABB.MaxZ)/2)/ClusterGroups.AABBGridCellSize)
+		
 		ClusterGroups.AABBGrid[XCell] = ClusterGroups.AABBGrid[XCell] or {}
 		ClusterGroups.AABBGrid[XCell][ZCell] = ClusterGroups.AABBGrid[XCell][ZCell] or {}
-
 		table.insert(ClusterGroups.AABBGrid[XCell][ZCell], ClusterGroup)
 	end
 
@@ -175,7 +142,6 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 			local XCell = math.floor((UnclusteredPoint.Position.X)/ClusterGroups.AABBGridCellSize)
 			local ZCell = math.floor((UnclusteredPoint.Position.Z)/ClusterGroups.AABBGridCellSize)
 			ClusterGroups.AABBGrid[XCell] = ClusterGroups.AABBGrid[XCell] or {}
-
 			if ClusterGroups.AABBGrid[XCell][ZCell] then 
 				table.insert(ClusterGroups.AABBGrid[XCell][ZCell][1].Cluster, UnclusteredPoint)
 			else
@@ -183,8 +149,6 @@ function Module.NewClusterTree(Points, Epsilon, MinSamples, Subdivisions)
 			end
 		end 
 	end
-
-	if VisualizeCells then VisualizeAABBGrid(ClusterGroups.AABBGrid, ClusterGroups.AABBGridCellSize, Subdivisions) end
 
 	if Subdivisions and Subdivisions>1 then -- TODO: Balance sub clustering
 		for ClusterID, ClusterGroup in ClusterGroups do
@@ -198,7 +162,7 @@ end
 
 -------------------------------------------------------------------------------------------------
 --- Query all points in a OBB-like Radius, falls to a near-lookup when Radius is not provided ---
---- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)		     	  ---
+--- Currently, ~avg Θ(log n), ~amortized O(n) (tree is unbalanced as of now)		      ---
 -------------------------------------------------------------------------------------------------
 
 function Module.Query(ClusterTreeTable, Point, Radius, Near, AABBsVisited)
@@ -217,13 +181,7 @@ function Module.Query(ClusterTreeTable, Point, Radius, Near, AABBsVisited)
 			if not AABBGrid[NearX] or not AABBGrid[NearX][NearZ] then continue end
 
 			local OtherCell = AABBGrid[NearX][NearZ]
-			if EntireCellInsideRadius(Point, NearX, NearZ, ClusterTreeTable.AABBGridCellSize, Radius) then
-				for _, ClusterGroup in OtherCell do
-					for _, Point in ClusterGroup.Cluster do
-						table.insert(Near, Point)
-					end
-				end
-			else
+			if not EntireCellInsideRadius(Point, NearX, NearZ, ClusterTreeTable.AABBGridCellSize, Radius) then
 				for _, ClusterGroup in OtherCell do
 					if AABBsVisited[ClusterGroup] then AABBsVisited[ClusterGroup.SubCluster or ClusterGroup] = true continue end -- Continue to mark the entire lineage to avoid extra work.
 					if not ClusterGroup.AABB then continue end
@@ -243,6 +201,12 @@ function Module.Query(ClusterTreeTable, Point, Radius, Near, AABBsVisited)
 
 							Module.Query(ClusterGroup.SubCluster, Point, SubQueryRadius, Near)
 						end
+					end
+				end
+			else
+				for _, ClusterGroup in OtherCell do
+					for _, Point in ClusterGroup.Cluster do
+						table.insert(Near, Point)
 					end
 				end
 			end
